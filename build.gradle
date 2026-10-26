@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'com.github.mirko0'
-version = '0.4.0'
+version = '0.5.0'
 description = 'Annotation Command Processor for Discord Java API'
 
 // The language level is part of the API: raising it breaks every consumer on an older JDK.

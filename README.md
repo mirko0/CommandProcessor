@@ -23,7 +23,7 @@ Published to your local Maven repository with:
 repositories { mavenCentral(); mavenLocal() }
 
 dependencies {
-    implementation 'com.github.mirko0:command-processor:0.3.0'
+    implementation 'com.github.mirko0:command-processor:0.5.0'
     implementation 'net.dv8tion:JDA:6.2.0'   // yours, not the library's
 }
 ```
@@ -34,7 +34,7 @@ dependencies {
 <dependency>
     <groupId>com.github.mirko0</groupId>
     <artifactId>command-processor</artifactId>
-    <version>0.3.0</version>
+    <version>0.5.0</version>
 </dependency>
 ```
 
@@ -250,7 +250,7 @@ Java 17+, JDA 6.x. slf4j-api arrives through JDA and is the only thing used beyo
 
 ## Upgrading
 
-**Unreleased** adds `minValue` / `maxValue` / `minLength` / `maxLength` on `@CommandOption`, numeric
+**0.5.0** adds `minValue` / `maxValue` / `minLength` / `maxLength` on `@CommandOption`, numeric
 choice values on `INTEGER` / `NUMBER` options, and `Builder.guildScope(GuildScopeResolver)` with
 `CommandDefinition.getGuildIds()`. No breaking changes. Two commands that could never register now
 fail loudly at startup instead: numeric options with text choices (Discord rejected the whole
