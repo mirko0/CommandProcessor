@@ -16,6 +16,7 @@ import com.github.mirko0.commandprocessor.example.PingCommand;
 import net.dv8tion.jda.api.Permission;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.interactions.InteractionContextType;
+import net.dv8tion.jda.api.interactions.commands.Command;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.OptionData;
 import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
@@ -31,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -266,6 +268,249 @@ class CommandParserTest {
         void parse_choicesOnATypeThatCannotHaveThem_areIgnoredNotFatal() {
             CommandDefinition definition = CommandParser.parseCommand(new ChoicesOnUser());
             assertTrue(dataOf(definition).getOptions().get(0).getChoices().isEmpty());
+        }
+    }
+
+    // ----------------------------------------------------------- constraints
+
+    @Nested
+    @DisplayName("option ranges, lengths and typed choices")
+    class Constraints {
+
+        @CommandInfo(name = "bounded", description = "Bounded options.")
+        static class Bounded implements QCommandBase {
+            @CommandHandler
+            void run(@CommandEvent SlashCommandInteractionEvent e,
+                     @CommandOption(type = OptionType.INTEGER, name = "count", description = "Count.",
+                             minValue = 1, maxValue = 10) Long count,
+                     @CommandOption(type = OptionType.NUMBER, name = "ratio", description = "Ratio.",
+                             minValue = 0.5) Double ratio,
+                     @CommandOption(type = OptionType.STRING, name = "tag", description = "Tag.",
+                             minLength = 2, maxLength = 32) String tag,
+                     @CommandOption(type = OptionType.STRING, name = "note", description = "Note.",
+                             minLength = 0) String note) { }
+        }
+
+        private OptionData option(String name) {
+            return dataOf(CommandParser.parseCommand(new Bounded())).getOptions().stream()
+                    .filter(option -> option.getName().equals(name))
+                    .findFirst()
+                    .orElseThrow();
+        }
+
+        @Test
+        void parse_integerRange_isAppliedAsWholeNumbers() {
+            OptionData count = option("count");
+            assertAll(
+                    () -> assertEquals(1L, count.getMinValue()),
+                    () -> assertEquals(10L, count.getMaxValue()));
+        }
+
+        @Test
+        void parse_numberMinimumOnly_leavesTheMaximumUnset() {
+            OptionData ratio = option("ratio");
+            assertAll(
+                    () -> assertEquals(0.5, ratio.getMinValue()),
+                    () -> assertNull(ratio.getMaxValue()));
+        }
+
+        @Test
+        void parse_stringLength_isApplied() {
+            OptionData tag = option("tag");
+            assertAll(
+                    () -> assertEquals(2, tag.getMinLength()),
+                    () -> assertEquals(32, tag.getMaxLength()));
+        }
+
+        /** Discord accepts 0 as a minimum, but JDA refuses to set it, so it must not reach JDA. */
+        @Test
+        void parse_minLengthZero_isAcceptedAsNoMinimum() {
+            assertNull(option("note").getMinLength());
+        }
+
+        @Test
+        void parse_noConstraints_leavesTheOptionUnbounded() {
+            OptionData message = dataOf(CommandParser.parseCommand(new PingCommand()))
+                    .getSubcommandGroups().get(0).getSubcommands().stream()
+                    .flatMap(sub -> sub.getOptions().stream())
+                    .findFirst()
+                    .orElseThrow();
+            assertAll(
+                    () -> assertNull(message.getMinLength()),
+                    () -> assertNull(message.getMaxLength()));
+        }
+
+        @CommandInfo(name = "inverted", description = "Min above max.")
+        static class InvertedRange implements QCommandBase {
+            @CommandHandler
+            void run(@CommandEvent SlashCommandInteractionEvent e,
+                     @CommandOption(type = OptionType.INTEGER, name = "count", description = "Count.",
+                             minValue = 10, maxValue = 1) Long count) { }
+        }
+
+        @CommandInfo(name = "textrange", description = "Range on a string.")
+        static class RangeOnString implements QCommandBase {
+            @CommandHandler
+            void run(@CommandEvent SlashCommandInteractionEvent e,
+                     @CommandOption(type = OptionType.STRING, name = "text", description = "Text.",
+                             maxValue = 5) String text) { }
+        }
+
+        @CommandInfo(name = "fraction", description = "Fractional integer bound.")
+        static class FractionalIntegerBound implements QCommandBase {
+            @CommandHandler
+            void run(@CommandEvent SlashCommandInteractionEvent e,
+                     @CommandOption(type = OptionType.INTEGER, name = "count", description = "Count.",
+                             minValue = 1.5) Long count) { }
+        }
+
+        @CommandInfo(name = "huge", description = "Bound outside Discord's range.")
+        static class HugeBound implements QCommandBase {
+            @CommandHandler
+            void run(@CommandEvent SlashCommandInteractionEvent e,
+                     @CommandOption(type = OptionType.NUMBER, name = "big", description = "Big.",
+                             maxValue = 1e300) Double big) { }
+        }
+
+        @Test
+        void parse_minValueAboveMaxValue_throwsNamingTheOption() {
+            assertRejected(new InvertedRange(), "'count'", "greater than maxValue");
+        }
+
+        @Test
+        void parse_rangeOnANonNumericOption_throws() {
+            assertRejected(new RangeOnString(), "'text'", "INTEGER and NUMBER");
+        }
+
+        @Test
+        void parse_fractionalBoundOnAnIntegerOption_throws() {
+            assertRejected(new FractionalIntegerBound(), "'count'", "not a whole number");
+        }
+
+        @Test
+        void parse_boundOutsideDiscordsRange_throws() {
+            assertRejected(new HugeBound(), "'big'", "outside Discord's range");
+        }
+
+        @CommandInfo(name = "toolong", description = "Max length over 6000.")
+        static class MaxLengthOverLimit implements QCommandBase {
+            @CommandHandler
+            void run(@CommandEvent SlashCommandInteractionEvent e,
+                     @CommandOption(type = OptionType.STRING, name = "text", description = "Text.",
+                             maxLength = 6001) String text) { }
+        }
+
+        @CommandInfo(name = "zeromax", description = "Max length of zero.")
+        static class MaxLengthZero implements QCommandBase {
+            @CommandHandler
+            void run(@CommandEvent SlashCommandInteractionEvent e,
+                     @CommandOption(type = OptionType.STRING, name = "text", description = "Text.",
+                             maxLength = 0) String text) { }
+        }
+
+        @CommandInfo(name = "invertedlength", description = "Min length above max.")
+        static class InvertedLength implements QCommandBase {
+            @CommandHandler
+            void run(@CommandEvent SlashCommandInteractionEvent e,
+                     @CommandOption(type = OptionType.STRING, name = "text", description = "Text.",
+                             minLength = 10, maxLength = 5) String text) { }
+        }
+
+        @CommandInfo(name = "numberlength", description = "Length on an integer.")
+        static class LengthOnInteger implements QCommandBase {
+            @CommandHandler
+            void run(@CommandEvent SlashCommandInteractionEvent e,
+                     @CommandOption(type = OptionType.INTEGER, name = "count", description = "Count.",
+                             maxLength = 5) Long count) { }
+        }
+
+        @Test
+        void parse_maxLengthOverDiscordsLimit_throws() {
+            assertRejected(new MaxLengthOverLimit(), "'text'", "between 1 and 6000");
+        }
+
+        @Test
+        void parse_maxLengthZero_throws() {
+            assertRejected(new MaxLengthZero(), "'text'", "between 1 and 6000");
+        }
+
+        @Test
+        void parse_minLengthAboveMaxLength_throws() {
+            assertRejected(new InvertedLength(), "'text'", "greater than maxLength");
+        }
+
+        @Test
+        void parse_lengthOnANonStringOption_throws() {
+            assertRejected(new LengthOnInteger(), "'count'", "STRING options");
+        }
+
+        @CommandInfo(name = "numericchoices", description = "Choices on numeric options.")
+        static class NumericChoices implements QCommandBase {
+            @CommandHandler
+            void run(@CommandEvent SlashCommandInteractionEvent e,
+                     @CommandOption(type = OptionType.INTEGER, name = "days", description = "Days.",
+                             choices = {"1:One day", "7:One week"}) Long days,
+                     @CommandOption(type = OptionType.NUMBER, name = "speed", description = "Speed.",
+                             choices = {"0.5:Half", "2"}) Double speed) { }
+        }
+
+        /** Every choice used to be a string, which Discord rejects on a numeric option. */
+        @Test
+        void parse_integerChoices_carryIntegerValues() {
+            List<Command.Choice> choices =
+                    dataOf(CommandParser.parseCommand(new NumericChoices())).getOptions().get(0).getChoices();
+            assertAll(
+                    () -> assertEquals(OptionType.INTEGER, choices.get(0).getType()),
+                    () -> assertEquals(7L, choices.get(1).getAsLong()),
+                    () -> assertEquals("One week", choices.get(1).getName()));
+        }
+
+        @Test
+        void parse_numberChoices_carryNumberValues() {
+            List<Command.Choice> choices =
+                    dataOf(CommandParser.parseCommand(new NumericChoices())).getOptions().get(1).getChoices();
+            assertAll(
+                    () -> assertEquals(OptionType.NUMBER, choices.get(0).getType()),
+                    () -> assertEquals(0.5, choices.get(0).getAsDouble()),
+                    () -> assertEquals("2", choices.get(1).getName()));
+        }
+
+        @CommandInfo(name = "badchoice", description = "Text choice on an integer.")
+        static class TextChoiceOnInteger implements QCommandBase {
+            @CommandHandler
+            void run(@CommandEvent SlashCommandInteractionEvent e,
+                     @CommandOption(type = OptionType.INTEGER, name = "days", description = "Days.",
+                             choices = {"week:One week"}) Long days) { }
+        }
+
+        @Test
+        void parse_nonNumericChoiceOnAnIntegerOption_throws() {
+            assertRejected(new TextChoiceOnInteger(), "'days'", "not a number");
+        }
+
+        @CommandInfo(name = "hugechoice", description = "Choice outside Discord's range.")
+        static class HugeChoice implements QCommandBase {
+            @CommandHandler
+            void run(@CommandEvent SlashCommandInteractionEvent e,
+                     @CommandOption(type = OptionType.NUMBER, name = "big", description = "Big.",
+                             choices = {"Infinity:Forever"}) Double big) { }
+        }
+
+        /** JDA only range-checks addChoice(name, number); the Choice objects go through unchecked. */
+        @Test
+        void parse_numericChoiceOutsideDiscordsRange_throws() {
+            assertRejected(new HugeChoice(), "'big'", "outside Discord's range");
+        }
+
+        private void assertRejected(QCommandBase command, String... expectedFragments) {
+            IllegalArgumentException thrown =
+                    assertThrows(IllegalArgumentException.class, () -> CommandParser.parseCommand(command));
+            String message = thrown.getMessage();
+            for (String fragment : expectedFragments) {
+                assertTrue(message.contains(fragment), () -> "expected \"" + fragment + "\" in: " + message);
+            }
+            assertTrue(message.contains(command.getClass().getSimpleName()),
+                    () -> "expected the class name in: " + message);
         }
     }
 

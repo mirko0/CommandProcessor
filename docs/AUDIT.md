@@ -344,3 +344,9 @@ the flag on the option, so Discord asked the bot for suggestions, and nothing in
 shapes JDA throws on were live in the parser at the same time — autocomplete on a type that cannot
 carry choices, autocomplete alongside `choices`, and the missing option-name check — each of which
 aborted the command being parsed. See [AUTOCOMPLETE.md](AUTOCOMPLETE.md) §6.
+
+**A21 — Declared choices on numeric options were sent as text.** *Fixed, unreleased.*
+`choices` was accepted on `INTEGER` and `NUMBER` options, but every choice was built as a string
+`Command.Choice`. JDA does not check the value type; Discord does, and rejects the whole `PUT`, so
+one such option took every other command in the same registration with it. Choice values are now
+parsed to the option's type, and one that is not a number fails that command at parse time.

@@ -74,8 +74,8 @@ still show the help that was asked for.
 
 Two filters decide what a person sees.
 
-**Where.** A command with `guildId` set only appears in that guild. Listing it elsewhere advertises
-something that cannot be run.
+**Where.** A command scoped to guilds — by `guildId` or a `GuildScopeResolver` — only appears in
+those guilds. Listing it elsewhere advertises something that cannot be run.
 
 **Who.** A command declaring `permissions` is listed only for a member holding *all* of them,
 checked against the channel the help was opened in so a channel override is respected. A category

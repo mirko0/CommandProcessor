@@ -12,11 +12,14 @@ import org.jetbrains.annotations.Nullable;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * A parsed command: what was declared on the class, and the reflection handles needed to invoke it.
@@ -42,7 +45,7 @@ public class CommandDefinition {
     private Response defaultResponse;
     private List<SubcommandDefinition> subcommands = List.of();
     private Map<String, SubcommandGroupDefinition> groups = Map.of();
-    private String guildId;
+    private Set<String> guildIds = Set.of();
     private boolean nsfw;
     private String categoryId = CommandCategory.DEFAULT_ID;
     private List<AutoCompleteDefinition> autoCompletes = List.of();
@@ -166,22 +169,52 @@ public class CommandDefinition {
         return all;
     }
 
-    /** @return the guild this command is registered to, or null/empty when it is global */
-    @Nullable
+    /**
+     * @return the guild this command is registered to, or empty — never null — when it is global.
+     *         When it is registered to several, the first of {@link #getGuildIds()}
+     */
+    @NotNull
     public String getGuildId() {
-        return guildId;
+        return guildIds.isEmpty() ? "" : guildIds.iterator().next();
     }
 
+    /** @param guildId the one guild to register in; null or blank makes the command global */
     public void setGuildId(String guildId) {
-        this.guildId = guildId;
+        setGuildIds(guildId == null ? List.of() : List.of(guildId));
     }
 
     /**
-     * @return true when the command is registered to one guild rather than globally
+     * Every guild this command is registered to.
+     *
+     * @return an unmodifiable set in declaration order; empty when the command is global
+     * @since  0.5.0
+     */
+    @NotNull
+    public Set<String> getGuildIds() {
+        return guildIds;
+    }
+
+    /**
+     * @param guildIds the guilds to register in; trimmed, with blanks and duplicates dropped. Null
+     *                 or empty makes the command global
+     * @since 0.5.0
+     */
+    public void setGuildIds(Collection<String> guildIds) {
+        Set<String> normalised = new LinkedHashSet<>();
+        if (guildIds != null) {
+            for (String guildId : guildIds) {
+                if (guildId != null && !guildId.isBlank()) normalised.add(guildId.trim());
+            }
+        }
+        this.guildIds = Collections.unmodifiableSet(normalised);
+    }
+
+    /**
+     * @return true when the command is registered to specific guilds rather than globally
      * @since  0.1.0
      */
     public boolean isGuildScoped() {
-        return guildId != null && !guildId.isEmpty();
+        return !guildIds.isEmpty();
     }
 
     public boolean isNsfw() {
@@ -297,6 +330,6 @@ public class CommandDefinition {
 
     @Override
     public String toString() {
-        return "CommandDefinition[" + name + (isGuildScoped() ? "@" + guildId : "") + "]";
+        return "CommandDefinition[" + name + (isGuildScoped() ? "@" + String.join(",", guildIds) : "") + "]";
     }
 }

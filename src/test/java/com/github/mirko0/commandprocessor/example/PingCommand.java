@@ -45,7 +45,7 @@ public class PingCommand implements QCommandBase {
     @SubCommandHandler(name = "count", description = "Count to a number.", order = 2)
     public void count(@CommandEvent SlashCommandInteractionEvent event,
                       @CommandOption(type = OptionType.INTEGER, name = "upto",
-                              description = "How high to count.")
+                              description = "How high to count.", minValue = 1, maxValue = 100)
                       Long upTo) {
         event.reply(String.valueOf(upTo == null ? 10 : upTo)).setEphemeral(true).queue();
     }

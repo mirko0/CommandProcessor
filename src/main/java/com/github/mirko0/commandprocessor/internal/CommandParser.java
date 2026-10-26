@@ -89,6 +89,11 @@ public final class CommandParser {
         CommandDefinition cmdDef = new CommandDefinition();
         cmdDef.setName(cmdName);
         cmdDef.setInstance(command);
+        if (!info.guildId().isEmpty() && info.guildId().isBlank()) {
+            // Blank would otherwise read as "no guild" and register a guild command globally.
+            throw new IllegalArgumentException("Command '" + cmdName + "' (" + clazz.getName()
+                    + ") declares a blank guildId. Leave it out for a global command.");
+        }
         cmdDef.setGuildId(info.guildId());
         cmdDef.setNsfw(info.nsfw());
         cmdDef.setLocalizedNames(info.localizedNames());
@@ -451,6 +456,7 @@ public final class CommandParser {
                     LocalizationParser.getLocalizedEntries(anno.localizedDescriptions()));
 
         addChoices(optionData, anno, optionName, owner, origin);
+        OptionConstraints.apply(optionData, anno, owner, origin);
         return optionData;
     }
 
@@ -504,7 +510,7 @@ public final class CommandParser {
             declared = Arrays.copyOf(declared, MAX_CHOICES);
         }
 
-        optionData.addChoices(parseChoices(declared, optionName, origin));
+        optionData.addChoices(parseChoices(declared, anno.type(), optionName, origin));
     }
 
     /**
@@ -534,12 +540,13 @@ public final class CommandParser {
     /**
      * Parses choice options for command arguments.
      */
-    private static Command.Choice[] parseChoices(String[] choiceStrings, String optionName, String origin) {
+    private static Command.Choice[] parseChoices(String[] choiceStrings, OptionType type,
+                                                 String optionName, String origin) {
         return Arrays.stream(choiceStrings)
                 .map(s -> {
                     String[] parts = s.split(":");
                     if (parts.length == 2) {
-                        return new Command.Choice(parts[1], parts[0]);
+                        return typedChoice(parts[1], parts[0], type, optionName, origin);
                     }
                     if (parts.length > 2) {
                         // Falling through to value-as-label here is silent and very hard to spot:
@@ -548,9 +555,40 @@ public final class CommandParser {
                                         + "\"<value>:<label>\"; this one is registered as value and label \"{}\".",
                                 s, optionName, origin, parts[0]);
                     }
-                    return new Command.Choice(parts[0], parts[0]);
+                    return typedChoice(parts[0], parts[0], type, optionName, origin);
                 })
                 .toArray(Command.Choice[]::new);
+    }
+
+    /**
+     * A choice whose value has the option's type.
+     *
+     * <p>A text value on an {@code INTEGER} or {@code NUMBER} option is not something JDA checks, but
+     * Discord rejects it — and with it the entire {@code PUT}, so every other command in the same
+     * registration went too. Refused here instead, naming the option.
+     *
+     * @throws IllegalArgumentException when a numeric option's value is not a number Discord accepts
+     */
+    private static Command.Choice typedChoice(String label, String value, OptionType type,
+                                              String optionName, String origin) {
+        if (type != OptionType.INTEGER && type != OptionType.NUMBER) return new Command.Choice(label, value);
+
+        String where = "Choice \"" + value + "\" on " + type + " option '" + optionName + "' (" + origin + ")";
+        double number;
+        try {
+            number = type == OptionType.INTEGER ? Long.parseLong(value.trim()) : Double.parseDouble(value.trim());
+        } catch (NumberFormatException notANumber) {
+            throw new IllegalArgumentException(where + " is not a number. Numeric options need numeric "
+                    + "choice values.", notANumber);
+        }
+        if (!Double.isFinite(number)
+                || number < OptionData.MIN_NEGATIVE_NUMBER || number > OptionData.MAX_POSITIVE_NUMBER) {
+            throw new IllegalArgumentException(where + " is outside Discord's range of "
+                    + (long) OptionData.MIN_NEGATIVE_NUMBER + " to " + (long) OptionData.MAX_POSITIVE_NUMBER + ".");
+        }
+        return type == OptionType.INTEGER
+                ? new Command.Choice(label, (long) number)
+                : new Command.Choice(label, number);
     }
 
     /**

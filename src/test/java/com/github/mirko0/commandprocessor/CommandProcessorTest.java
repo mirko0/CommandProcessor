@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -135,6 +137,80 @@ class CommandProcessorTest {
     void register_classWithoutCommandInfo_isSkipped() {
         CommandProcessor processor = new CommandProcessor(List.of(new QCommandBase() { }), false);
         assertTrue(processor.getCommandMap().isEmpty());
+    }
+
+    @CommandInfo(name = "bounded", description = "Inverted range.")
+    static class BadRange implements QCommandBase {
+        @CommandHandler
+        void run(@CommandEvent SlashCommandInteractionEvent e,
+                 @CommandOption(type = OptionType.INTEGER, name = "count", description = "Count.",
+                         minValue = 5, maxValue = 1) Long count) { }
+    }
+
+    /** An unusable bound is refused, not dropped — but only that command pays for it. */
+    @Test
+    void register_commandWithAnUnusableRange_isSkippedAndTheOthersRegister() {
+        CommandProcessor processor = new CommandProcessor(List.of(new BadRange(), new Alpha()), false);
+        assertAll(
+                () -> assertFalse(processor.getCommandMap().containsKey("bounded")),
+                () -> assertTrue(processor.getCommandMap().containsKey("alpha")));
+    }
+
+    @Test
+    void builder_noGuildScope_keepsTheDeclaredGuild() {
+        CommandProcessor processor = CommandProcessor.builder()
+                .commands(List.of(new Alpha(), new Beta())).helpCommand(false).build();
+        assertAll(
+                () -> assertEquals(Set.of("999"), processor.getCommandMap().get("beta").getGuildIds()),
+                () -> assertFalse(processor.getCommandMap().get("alpha").isGuildScoped()));
+    }
+
+    @Test
+    void builder_guildScopeByCategory_scopesThatCategorysCommands() {
+        CommandProcessor processor = CommandProcessor.builder()
+                .commands(List.of(new Alpha(), new Beta()))
+                .helpCommand(false)
+                .guildScope(GuildScopeResolver.byCategory(Map.of("Utility", List.of("111", "222"))))
+                .build();
+        assertAll(
+                () -> assertEquals(Set.of("111", "222"), processor.getCommandMap().get("alpha").getGuildIds()),
+                () -> assertEquals(Set.of("999"), processor.getCommandMap().get("beta").getGuildIds(),
+                        "a command outside the map keeps what it declared"));
+    }
+
+    @Test
+    void builder_guildScopeByCommand_replacesTheDeclaredGuild() {
+        CommandProcessor processor = CommandProcessor.builder()
+                .commands(List.of(new Beta()))
+                .helpCommand(false)
+                .guildScope(GuildScopeResolver.byCommand(Map.of("beta", List.of("111"))))
+                .build();
+        assertEquals(Set.of("111"), processor.getCommandMap().get("beta").getGuildIds());
+    }
+
+    @Test
+    void builder_guildScopeByCommand_emptyListMakesTheCommandGlobal() {
+        CommandProcessor processor = CommandProcessor.builder()
+                .commands(List.of(new Beta()))
+                .helpCommand(false)
+                .guildScope(GuildScopeResolver.byCommand(Map.of("beta", List.of())))
+                .build();
+        assertFalse(processor.getCommandMap().get("beta").isGuildScoped());
+    }
+
+    @Test
+    void builder_resolverThatThrows_skipsOnlyThatCommand() {
+        CommandProcessor processor = CommandProcessor.builder()
+                .commands(List.of(new Alpha(), new Beta()))
+                .helpCommand(false)
+                .guildScope(command -> {
+                    if (command.getName().equals("beta")) throw new IllegalStateException("config missing");
+                    return null;
+                })
+                .build();
+        assertAll(
+                () -> assertTrue(processor.getCommandMap().containsKey("alpha")),
+                () -> assertFalse(processor.getCommandMap().containsKey("beta")));
     }
 
     @Test

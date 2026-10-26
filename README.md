@@ -117,6 +117,25 @@ Do **not** call `registerGlobalCommands` once per shard. Global commands belong 
 not to a shard, so one call registers them everywhere; the `ShardManager` overload picks a shard for
 you.
 
+**Guilds from configuration.** `@CommandInfo(guildId = ...)` is a compile-time constant. To choose
+guilds at runtime, give the builder a `GuildScopeResolver`; it is asked for every command as it
+registers, and its answer replaces the declared guild:
+
+```java
+CommandProcessor.builder()
+        .commands(commands)
+        .guildScope(GuildScopeResolver.byCategory(Map.of("admin", config.staffGuildIds())))
+        // or by command name:   GuildScopeResolver.byCommand(Map.of("debug", List.of(testGuild)))
+        // or any lambda:        command -> config.guildsFor(command.getGuildId())
+        .build();
+```
+
+Commands the resolver does not map keep what they declared; an empty list makes a command global.
+The declared `guildId` reaches the resolver as written, so it can be a config key such as
+`guildId = "staff"`. A command can be scoped to several guilds, and every command for a guild goes
+in that guild's single registration request. An id that is not a snowflake after resolution skips
+that command with an error rather than registering it globally.
+
 With Spring, the command list is every bean implementing the marker interface:
 
 ```java
@@ -150,7 +169,23 @@ option is supplied and works every time it is omitted.
 reference type — a primitive throws on unboxing — and every optional one must be null-checked.
 
 Choices are `"<value>:<label>"` and must contain exactly one colon; with more, the whole string
-becomes both value and label and the library warns.
+becomes both value and label and the library warns. On `INTEGER` and `NUMBER` options the value must
+be a number (`"7:One week"`).
+
+Ranges and lengths are enforced by Discord before the handler runs:
+
+```java
+@CommandOption(type = OptionType.INTEGER, name = "amount", description = "How many.",
+        minValue = 1, maxValue = 100) Long amount,
+@CommandOption(type = OptionType.STRING, name = "reason", description = "Why.",
+        minLength = 3, maxLength = 512) String reason
+```
+
+`minValue` / `maxValue` apply to `INTEGER` and `NUMBER` (whole numbers on `INTEGER`, within
+±(2<sup>53</sup> − 1)); `minLength` / `maxLength` apply to `STRING`, within 0–6000. Leave them out for
+no limit. A limit on the wrong type, out of range, or with min above max is not dropped — the
+handler relies on it — so that command fails registration with an error naming the option, and the
+rest still register.
 
 ---
 
@@ -214,6 +249,12 @@ Java 17+, JDA 6.x. slf4j-api arrives through JDA and is the only thing used beyo
 ---
 
 ## Upgrading
+
+**Unreleased** adds `minValue` / `maxValue` / `minLength` / `maxLength` on `@CommandOption`, numeric
+choice values on `INTEGER` / `NUMBER` options, and `Builder.guildScope(GuildScopeResolver)` with
+`CommandDefinition.getGuildIds()`. No breaking changes. Two commands that could never register now
+fail loudly at startup instead: numeric options with text choices (Discord rejected the whole
+request) and a non-numeric or blank `guildId` (the guild lookup threw).
 
 **0.3.0** adds message commands and `CommandProcessor.builder()`. No breaking changes; the feature
 is inert unless a `MessageCommandConfig` is passed.

@@ -7,6 +7,7 @@ import com.github.mirko0.commandprocessor.help.HelpModel;
 import com.github.mirko0.commandprocessor.definitions.MessageCommandDefinition;
 import com.github.mirko0.commandprocessor.internal.CategoryRegistry;
 import com.github.mirko0.commandprocessor.internal.CommandParser;
+import com.github.mirko0.commandprocessor.internal.GuildScopes;
 import com.github.mirko0.commandprocessor.internal.TriggerIndex;
 import com.github.mirko0.commandprocessor.message.MessageCommandConfig;
 import com.github.mirko0.commandprocessor.message.MessageCommandHandler;
@@ -22,7 +23,6 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -56,6 +56,7 @@ public final class CommandProcessor {
     private final MessageCommandHandler messageCommandHandler;
     private final MessageCommandConfig messageCommandConfig;
     private final TriggerIndex triggerIndex;
+    private final GuildScopeResolver guildScope;
 
     /**
      * Assigned after every command has been parsed, because it is derived from them.
@@ -123,7 +124,16 @@ public final class CommandProcessor {
                             boolean helpCommand,
                             @Nullable Collection<CommandCategory> categories,
                             @Nullable MessageCommandConfig messageCommands) {
+        this(commands, helpCommand, categories, messageCommands, GuildScopeResolver.declared());
+    }
+
+    private CommandProcessor(Collection<? extends QCommandBase> commands,
+                             boolean helpCommand,
+                             Collection<CommandCategory> categories,
+                             MessageCommandConfig messageCommands,
+                             GuildScopeResolver guildScope) {
         Objects.requireNonNull(commands, "commands");
+        this.guildScope = guildScope;
 
         // A copy: adding the help command to the caller's list throws on List.of(...) and, under
         // Spring, mutates a collection the container owns.
@@ -171,6 +181,9 @@ public final class CommandProcessor {
      * and so the whole application's startup - down with it, which meant one bad description
      * stopped every other command in the bot from existing.
      *
+     * <p>Each command's guilds are decided here, by the {@link Builder#guildScope guild scope
+     * resolver} when one was given; a command whose scope cannot be resolved is skipped the same way.
+     *
      * @param commands the commands to register; not modified
      */
     public void register(@NotNull Collection<? extends QCommandBase> commands) {
@@ -185,6 +198,7 @@ public final class CommandProcessor {
                             command.getClass().getName());
                     continue;
                 }
+                GuildScopes.apply(cmdDef, guildScope);
 
                 CommandDefinition previous = commandMap.putIfAbsent(cmdDef.getName(), cmdDef);
                 if (previous != null) {
@@ -301,6 +315,8 @@ public final class CommandProcessor {
      *
      * <p><strong>This replaces every command registered to that guild</strong>, including any put
      * there by something other than this processor: {@code updateCommands()} is a full {@code PUT}.
+     * Every command scoped to a guild, however its scope was decided, goes in that guild's one
+     * request.
      *
      * @param shardManager the shard manager
      */
@@ -323,15 +339,7 @@ public final class CommandProcessor {
     }
 
     private void registerGuildCommands(JDA jda, ShardManager shardManager) {
-        Map<String, List<CommandData>> guildCommands = new HashMap<>();
-
-        commandMap.values().stream()
-                .filter(CommandDefinition::isGuildScoped)
-                .forEach(definition -> guildCommands
-                        .computeIfAbsent(definition.getGuildId(), id -> new ArrayList<>())
-                        .add(definition.getCommandData()));
-
-        guildCommands.forEach((guildId, commands) -> {
+        GuildScopes.byGuild(commandMap.values()).forEach((guildId, commands) -> {
             Guild guild = shardManager == null ? jda.getGuildById(guildId) : shardManager.getGuildById(guildId);
             if (guild == null) {
                 log.warn("Guild {} not found, cannot register {} guild command(s). The bot is either not "
@@ -396,6 +404,7 @@ public final class CommandProcessor {
         private boolean helpCommand = true;
         private Collection<CommandCategory> categories = List.of();
         private MessageCommandConfig messageCommands;
+        private GuildScopeResolver guildScope = GuildScopeResolver.declared();
 
         private Builder() {
         }
@@ -443,10 +452,25 @@ public final class CommandProcessor {
             return this;
         }
 
+        /**
+         * Decides each command's guilds at runtime, replacing what {@code @CommandInfo(guildId)}
+         * declared.
+         *
+         * @param  guildScope the resolver; null keeps every command's declared scope
+         * @return this builder
+         * @see    GuildScopeResolver
+         * @since  0.5.0
+         */
+        @NotNull
+        public Builder guildScope(@Nullable GuildScopeResolver guildScope) {
+            this.guildScope = guildScope == null ? GuildScopeResolver.declared() : guildScope;
+            return this;
+        }
+
         /** @return the processor */
         @NotNull
         public CommandProcessor build() {
-            return new CommandProcessor(commands, helpCommand, categories, messageCommands);
+            return new CommandProcessor(commands, helpCommand, categories, messageCommands, guildScope);
         }
     }
 }

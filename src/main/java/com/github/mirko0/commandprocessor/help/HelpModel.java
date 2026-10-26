@@ -83,7 +83,7 @@ public final class HelpModel {
     }
 
     private boolean isVisible(CommandDefinition command, Guild guild, Member member, GuildChannel channel) {
-        if (command.isGuildScoped() && (guild == null || !command.getGuildId().equals(guild.getId()))) {
+        if (command.isGuildScoped() && (guild == null || !command.getGuildIds().contains(guild.getId()))) {
             return false;
         }
 
