@@ -60,6 +60,25 @@ class AutoCompleteTest {
                 () -> assertTrue(dataOf(definition).getOptions().get(0).isAutoComplete()));
     }
 
+    /**
+     * A command whose only options are its base handler's. The gap check used to run before those
+     * options were added, so it read the command as having no option marked and warned that a
+     * perfectly wired handler would never run.
+     */
+    @Test
+    @DisplayName("a base handler's autocomplete option is not reported as unmarked")
+    void parse_baseHandlerOption_noFalseWarning() {
+        java.io.PrintStream original = System.err;
+        java.io.ByteArrayOutputStream captured = new java.io.ByteArrayOutputStream();
+        System.setErr(new java.io.PrintStream(captured, true));
+        try {
+            CommandParser.parseCommand(new Play());
+        } finally {
+            System.setErr(original);
+        }
+        assertFalse(captured.toString().contains("will never run"), captured.toString());
+    }
+
     @CommandInfo(name = "cfg", description = "Config.")
     static class Scoped implements QCommandBase {
         @SubCommandHandler(name = "set", description = "Set it.")

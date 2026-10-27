@@ -109,7 +109,6 @@ public final class CommandParser {
         OptionData[] defOptions = parseBaseHandler(cmdDef, methods, origin);
         boolean hadSubCommands = parseSubcommands(cmdDef, info, methods, origin);
         cmdDef.setAutoCompletes(parseAutoCompleteHandlers(methods, origin));
-        warnAboutAutoCompleteGaps(cmdDef, origin);
 
         if (!hadSubCommands && defOptions != null) {
             slashData(cmdDef).addOptions(defOptions);
@@ -120,6 +119,9 @@ public final class CommandParser {
                             + "Discord will never invoke the base handler, so it and its options are ignored.",
                     cmdDef.getName(), origin);
         }
+        // After the base handler's options are on the command data, or a command whose only options
+        // are its base handler's reads as having none marked, and every handler on it as unreachable.
+        warnAboutAutoCompleteGaps(cmdDef, origin);
 
         return cmdDef;
     }
