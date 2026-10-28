@@ -86,5 +86,17 @@ publishing {
     }
     repositories {
         mavenLocal() // Publishes to ~/.m2/repository
+        // GitHub Packages, used by .github/workflows/publish.yml on a version tag. The credentials
+        // come from the environment (the workflow's GITHUB_ACTOR and GITHUB_TOKEN with packages:
+        // write) or from gpr.user / gpr.key in ~/.gradle/gradle.properties. publishToMavenLocal
+        // never touches this repository, so a local build needs no token.
+        maven {
+            name = 'GitHubPackages'
+            url = uri('https://maven.pkg.github.com/mirko0/CommandProcessor')
+            credentials {
+                username = findProperty('gpr.user') ?: System.getenv('GITHUB_ACTOR')
+                password = findProperty('gpr.key') ?: System.getenv('GITHUB_TOKEN')
+            }
+        }
     }
 }
