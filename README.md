@@ -17,6 +17,29 @@ Published to your local Maven repository with:
 ./gradlew publishToMavenLocal
 ```
 
+and, on a version tag `vX.Y.Z`, to GitHub Packages by `.github/workflows/publish.yml`:
+`https://maven.pkg.github.com/mirko0/CommandProcessor`, same coordinates. GitHub Packages needs a
+token even to read, and a repository's own `GITHUB_TOKEN` cannot read a package owned by another
+account, so a consumer uses a classic personal access token with the `read:packages` scope:
+
+```groovy
+repositories {
+    mavenCentral()
+    mavenLocal()
+    maven {
+        url = 'https://maven.pkg.github.com/mirko0/CommandProcessor'
+        credentials {
+            username = findProperty('gpr.user') ?: System.getenv('GITHUB_ACTOR')
+            password = findProperty('gpr.key') ?: System.getenv('GITHUB_TOKEN')
+        }
+        content { includeGroup 'com.github.mirko0' }
+    }
+}
+```
+
+To publish by hand, put `gpr.user` and `gpr.key` (a token with `write:packages`) in
+`~/.gradle/gradle.properties` and run `./gradlew publish`.
+
 **Gradle**
 
 ```groovy

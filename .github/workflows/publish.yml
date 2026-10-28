@@ -1,0 +1,47 @@
+name: Publish
+
+# Push a tag vX.Y.Z whose version matches build.gradle. This runs the tests and publishes the jar,
+# its sources and its javadoc to GitHub Packages at https://maven.pkg.github.com/mirko0/CommandProcessor
+# as com.github.mirko0:command-processor. Nothing is published from branches or pull requests.
+#
+# Reading the package back needs a token too: a consumer outside this repository (whiskey-core, the
+# bots) uses a classic personal access token with the read:packages scope. Its own GITHUB_TOKEN
+# cannot read a package owned by another account.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to GitHub Packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: The tag must match build.gradle's version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ACTUAL="$(./gradlew -q properties | sed -n 's/^version: //p')"
+          if [ "$VERSION" != "$ACTUAL" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match build.gradle version $ACTUAL" >&2
+            exit 1
+          fi
+      - name: Test and publish
+        run: ./gradlew --no-daemon test publish
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
